@@ -7,71 +7,101 @@ export default function App() {
   const fields = useFields();
   const [fieldState, setFieldState] = useState(fields);
 
-  // Update state when fields change
+  const {
+    apiKey, npcName, initialMessage, vrmFile, aiModel, temperature, system,
+    idleEmote, triggeredEmote, thinkingEmote, talkingEmote
+  } = fieldState;
+
+  const fileUrl = useFile(vrmFile) || 'default.vrm';
+  const idleEmoteSrc = useFile(idleEmote) || 'idle.glb';
+  const triggeredEmoteSrc = useFile(triggeredEmote) || 'triggered.glb';
+  const thinkingEmoteSrc = useFile(thinkingEmote) || 'thinking.glb';
+  const talkingEmoteSrc = useFile(talkingEmote) || 'talking.glb';
+
+  const [visible, setVisible] = useState(false);
+  const [messages, setMessages] = useState([{ id: 1, name: npcName, text: initialMessage }]);
+  const [npcState, setNpcState] = useState('idle');
+  let ids = 0;
+
   useEffect(() => {
     setFieldState(fields);
   }, [fields]);
 
-  const { apiKey, npcName, initialMessage, vrmFile, aiModel, temperature, system } = fieldState;
-
-  const fileUrl = useFile(vrmFile) || 'default.vrm';
-  const [visible, setVisible] = useState(false);
-  const [messages, setMessages] = useState([{ id: 1, name: npcName, text: initialMessage }]);
-
-  // Update messages state when initialMessage changes
   useEffect(() => {
     setMessages([{ id: 1, name: npcName, text: initialMessage }]);
   }, [initialMessage, npcName]);
 
-  let ids = 0;  // Ensure `ids` is defined
+  const getEmoteSrc = () => {
+    switch (npcState) {
+      case 'idle':
+        console.log('Emote: idle', idleEmoteSrc);
+        return idleEmoteSrc;
+      case 'triggered':
+        console.log('Emote: triggered', triggeredEmoteSrc);
+        return triggeredEmoteSrc;
+      case 'thinking':
+        console.log('Emote: thinking', thinkingEmoteSrc);
+        return thinkingEmoteSrc;
+      case 'talking':
+        console.log('Emote: talking', talkingEmoteSrc);
+        return talkingEmoteSrc;
+      default:
+        console.log('Emote: default idle', idleEmoteSrc);
+        return idleEmoteSrc;
+    }
+  };
 
   const submit = async text => {
+    console.log('Submitting text, current state:', npcState);
+    setNpcState('thinking');
     const name = world.getAvatar().name;
-    setMessages(messages => [...messages, { id: ++ids, name, text }]);
-    
+    setMessages(m => [...m, { id: ++ids, name, text }]);
+
     try {
       const systemMessage = system || "You are a helpful assistant.";
-  
-      const openAIUrl = `https://api.openai.com/v1/chat/completions`;
-      const openAIHeaders = {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      };
-      const openAIBody = {
-        model: aiModel,
-        messages: [
-          { role: 'system', content: systemMessage },
-          { role: 'user', content: text }
-        ],
-        temperature: temperature,
-      };
 
       const response = await world.http({
         method: 'POST',
-        url: openAIUrl,
-        headers: openAIHeaders,
-        data: openAIBody,
+        url: `https://api.openai.com/v1/chat/completions`,
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        data: {
+          model: aiModel,
+          messages: [{ role: 'system', content: systemMessage }, { role: 'user', content: text }],
+          temperature: temperature,
+        },
       });
-  
+
       const responseString = response.choices[0].message.content.trim();
-      setMessages(messages => [...messages, { id: ++ids, name: npcName, text: responseString }]);
+      setMessages(m => [...m, { id: ++ids, name: npcName, text: responseString }]);
+      setNpcState('talking');
     } catch (err) {
       console.error("Error occurred:", err);
+      setNpcState('idle');
     }
-  }
+  };
 
   return (
     <app>
       <vrm
         src={fileUrl}
-        onPointerDown={() => setVisible(!visible)} 
+        emote={getEmoteSrc()}
+        onPointerDown={() => {
+          setVisible(!visible);
+          setNpcState(visible ? 'idle' : 'triggered');
+        }} 
       />
       {visible && (
         <Dialog
           title={npcName}
           messages={messages}
           onSubmit={submit}
-          onClose={() => setVisible(false)}
+          onClose={() => {
+            setVisible(false);
+            setNpcState('idle');
+          }}
         />
       )}
     </app>
@@ -87,6 +117,10 @@ export function getStore(state = initialState) {
     state,
     actions: {},
     fields: [
+      {
+        type: "section",
+        label: "Avatar Settings"
+      },
       {
         type: "text",
         key: "npcName",
@@ -104,7 +138,39 @@ export function getStore(state = initialState) {
         key: "vrmFile",
         label: "VRM File",
         accept: ".vrm",
-        initial: "",
+        initial: "default.vrm",
+      },
+      {
+        type: "file",
+        key: "idleEmote",
+        label: "Idle Emote",
+        accept: ".glb",
+        initial: "idle.glb",
+      },
+      {
+        type: "file",
+        key: "triggeredEmote",
+        label: "Triggered Emote",
+        accept: ".glb",
+        initial: "triggered.glb",
+      },
+      {
+        type: "file",
+        key: "thinkingEmote",
+        label: "Thinking Emote",
+        accept: ".glb",
+        initial: "thinking.glb",
+      },
+      {
+        type: "file",
+        key: "talkingEmote",
+        label: "Talking Emote",
+        accept: ".glb",
+        initial: "talking.glb",
+      },
+      {
+        type: "section",
+        label: "AI Settings"
       },
       {
         type: "dropdown",
@@ -128,7 +194,7 @@ export function getStore(state = initialState) {
         type: "text",
         key: "system",
         label: "System",
-        initial: "",
+        initial: "You are a Hyperfy AI assistant.",
       },
       {
         type: "float",
